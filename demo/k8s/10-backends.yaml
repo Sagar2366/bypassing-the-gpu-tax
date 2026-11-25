@@ -1,0 +1,71 @@
+# CPU SLM pool: real Ollama running llama3.2:1b (pulled by scripts/setup.sh).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: ollama-models, namespace: default}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 5Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ollama, namespace: default, labels: {app: ollama, pool: slm-cpu}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: ollama}}
+  template:
+    metadata: {labels: {app: ollama, pool: slm-cpu}}
+    spec:
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports: [{containerPort: 11434}]
+        env:
+        - {name: OLLAMA_KEEP_ALIVE, value: "24h"}   # keep the model hot for the talk
+        volumeMounts: [{name: models, mountPath: /root/.ollama}]
+        resources:
+          requests: {cpu: "1", memory: 2Gi}
+          limits: {memory: 4Gi}
+        readinessProbe: {httpGet: {path: /, port: 11434}, periodSeconds: 5}
+      volumes:
+      - name: models
+        persistentVolumeClaim: {claimName: ollama-models}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: ollama, namespace: default}
+spec:
+  selector: {app: ollama}
+  ports: [{port: 11434, targetPort: 11434}]
+---
+# "GPU" LLM pool: a mock that adds latency and reports an estimated cost. No GPU needed on stage.
+# The ConfigMap `mock-llm-src` is created from demo/mock-llm/server.py by scripts/setup.sh.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mock-llm, namespace: default, labels: {app: mock-llm, pool: llm-gpu}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mock-llm}}
+  template:
+    metadata: {labels: {app: mock-llm, pool: llm-gpu}}
+    spec:
+      containers:
+      - name: mock
+        image: python:3.12-slim
+        command: ["python3", "/app/server.py"]
+        env:
+        - {name: POOL_NAME, value: llm-gpu-pool}
+        - {name: DELAY_SECONDS, value: "1.5"}
+        - {name: USD_PER_1K_TOKENS, value: "0.015"}
+        ports: [{containerPort: 8000}]
+        volumeMounts: [{name: src, mountPath: /app}]
+        readinessProbe: {httpGet: {path: /, port: 8000}, periodSeconds: 3}
+      volumes:
+      - name: src
+        configMap: {name: mock-llm-src}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mock-llm, namespace: default}
+spec:
+  selector: {app: mock-llm}
+  ports: [{port: 8000, targetPort: 8000}]

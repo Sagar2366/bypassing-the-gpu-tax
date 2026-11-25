@@ -1,0 +1,17 @@
+# Slide 15. Envoy calls the classifier on every request.
+# failOpen: true -> if the classifier is down or slow, traffic still flows (to the default llm route).
+# Body is buffered because the classifier reads the prompt and rewrites "model".
+# response: {} makes Envoy send response headers so the decision is echoed back to the client.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata: {name: tier-classifier, namespace: default}
+spec:
+  targetRefs:
+  - {group: gateway.networking.k8s.io, kind: Gateway, name: eg}
+  extProc:
+  - backendRefs: [{name: classifier, port: 9002}]
+    failOpen: true
+    messageTimeout: 2s
+    processingMode:
+      request: {body: Buffered}
+      response: {}

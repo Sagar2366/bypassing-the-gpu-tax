@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: classifier, namespace: default, labels: {app: classifier}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: classifier}}
+  template:
+    metadata: {labels: {app: classifier}}
+    spec:
+      containers:
+      - name: classifier
+        image: wad/classifier:demo
+        imagePullPolicy: IfNotPresent     # image is side-loaded with `kind load docker-image`
+        ports: [{containerPort: 9002}]
+        env:
+        - {name: SLM_MODEL, value: "llama3.2:1b"}
+        - {name: LLM_MODEL, value: "frontier-large"}
+        - {name: CONFIDENCE_THRESHOLD, value: "0.80"}
+        resources:
+          requests: {cpu: 50m, memory: 32Mi}
+          limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: classifier, namespace: default}
+spec:
+  selector: {app: classifier}
+  ports:
+  - {name: grpc, port: 9002, targetPort: 9002, appProtocol: kubernetes.io/h2c}
